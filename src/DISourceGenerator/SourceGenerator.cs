@@ -1,5 +1,9 @@
 ﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+using System;
+using System.Text;
 using System.Threading;
 
 namespace DISourceGenerator
@@ -9,31 +13,39 @@ namespace DISourceGenerator
     {
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
-            IncrementalValueProvider prov = context.SyntaxProvider.ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "SharpDILibrary.RegisterDependencyAttribute",
-                predicate: CouldBeDependency,
-                transform: );
-                
+            IncrementalValuesProvider<INamedTypeSymbol?> result = context.SyntaxProvider.CreateSyntaxProvider(
+                                                                        AttributePredicate, 
+                                                                        GetClassesToGenerate);
+
+            context.RegisterSourceOutput(result, GenerateCode);
         }
 
-        private static bool CouldBeDependency(SyntaxNode syntaxNode, CancellationToken cancellationToken)
+        private bool AttributePredicate(SyntaxNode syntaxNode, CancellationToken cancellationToken)
         {
             if(syntaxNode is not AttributeSyntax attribute)
             {
                 return false;
             }
 
-            var name = GetName(attribute.Name);
+            return attribute.Name.ToString() == "Singleton";
         }
 
-        private static string? GetName(NameSyntax name)
+        private INamedTypeSymbol? GetClassesToGenerate(GeneratorSyntaxContext context, CancellationToken cancellationToken)
         {
-            return name switch
+            AttributeSyntax attributeSyntax = (AttributeSyntax)context.Node;
+            if(attributeSyntax.Parent.Parent is not ClassDeclarationSyntax classDeclaration)
             {
-                SimpleNameSyntax sns => sns.Identifier.Text,
-                QualifiedNameSyntax qns => qns.Right.Identifier.Text,
-                _ => null
-            };
+                return null;
+            }
+
+            INamedTypeSymbol? result = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
+            return result;
         }
+
+        private void GenerateCode(SourceProductionContext context, INamedTypeSymbol typeSymbol)
+        {
+            context.AddSource($"{typeSymbol.Name}.g.cs", "Test");
+        }
+
     }
 }
